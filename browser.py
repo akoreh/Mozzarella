@@ -2,6 +2,22 @@ import tkinter
 import tkinter.font as tkfont
 
 from url import URL
+from text import Text
+from tag import Tag
+
+RETRO_STYLE = {
+    "bg": "black",
+    "fg": "#00FF00",
+    "font": ("Courier New", 14),
+    "entry_bg": "black",
+    "entry_fg": "#00FF00",
+    "button_bg": "#222",
+    "button_fg": "#00FF00",
+    "canvas_bg": "black",
+    "canvas_text_fg": "#00FF00",
+    "border_width": 2,
+    "relief": "sunken",
+}
 
 
 class Browser:
@@ -10,13 +26,7 @@ class Browser:
         self.HSTEP, self.VSTEP = 13, 18
         self.scroll = 0
 
-        self.window = tkinter.Tk()
-        self.window.title("Mozzarella Browser 🧀")
-        self.canvas = tkinter.Canvas(
-            self.window, width=self.WIDTH, height=self.HEIGHT)
-        self.canvas.pack()
-
-        self.window.bind("<MouseWheel>", self._on_scroll)
+        self._initWindow()
 
         self.font = tkfont.Font(
             family="Cartograph CF",
@@ -25,44 +35,87 @@ class Browser:
             slant="italic",
         )
 
-    def load(self, url: str):
-        url = URL(url)
+    def _initWindow(self):
+        self.window = tkinter.Tk()
+        self.window.title("Mozzarella 🧀")
+        self.window.configure(bg=RETRO_STYLE["bg"])
+
+        # URL bar
+        self.url_var = tkinter.StringVar()
+        self.url_entry = tkinter.Entry(self.window,
+                                       textvariable=self.url_var,
+                                       bg=RETRO_STYLE["entry_bg"],
+                                       fg=RETRO_STYLE["entry_fg"],
+                                       font=RETRO_STYLE["font"],
+                                       # Cursor color
+                                       insertbackground=RETRO_STYLE["fg"],
+                                       bd=RETRO_STYLE["border_width"],
+                                       relief=RETRO_STYLE["relief"])
+        self.url_entry.pack(side=tkinter.TOP, fill=tkinter.X)
+        self.load_button = tkinter.Button(self.window,
+                                          text="Load",
+                                          bg=RETRO_STYLE["button_bg"],
+                                          fg=RETRO_STYLE["button_fg"],
+                                          font=RETRO_STYLE["font"],
+                                          bd=RETRO_STYLE["border_width"],
+                                          relief=RETRO_STYLE["relief"],
+                                          command=self._load)
+        self.load_button.pack(side=tkinter.TOP, fill=tkinter.X)
+
+        self.canvas = tkinter.Canvas(
+            self.window, width=self.WIDTH, height=self.HEIGHT, bg=RETRO_STYLE["canvas_bg"])
+        self.canvas.pack(fill=tkinter.BOTH, expand=True)
+
+        self.window.bind("<MouseWheel>", self._on_scroll)
+
+    def _load(self):
+        url = URL(self.url_var.get())
         body = url.request()
 
         text = self._lex(body)
         self.display_list = self._layout(text)
         self._draw()
 
-    def _lex(self, body) -> str:
-        text = ""
-        inTag = False
+    def _lex(self, body):
+        out = []
+        buffer = ""
+        in_tag = False
 
         for c in body:
             if c == "<":
-                inTag = True
+                in_tag = True
+                if buffer:
+                    out.append(Text(buffer))
+                buffer = ""
             elif c == ">":
-                inTag = False
-            elif not inTag:
-                text += c
+                in_tag = False
+                out.append(Tag(buffer))
+                buffer = ""
+            else:
+                buffer += c
 
-        return text
+        if not in_tag and buffer:
+            out.append(Text(buffer))
+        return out
 
-    def _layout(self, text: str):
+    def _layout(self, tokens):
         display_list = []
         cursor_x, cursor_y = self.HSTEP, self.VSTEP
 
-        for word in text.split():
-            w = self.font.measure(word)
+        for token in tokens:
+            if isinstance(token, Text):
+                for word in token.text.split():
+                    w = self.font.measure(word)
 
-            cursor_x += self.HSTEP
+                    cursor_x += self.HSTEP
 
-            if cursor_x + w > self.WIDTH - self.HSTEP:
-                cursor_y += self.font.metrics("linespace") * 1.25
-                cursor_x = self.HSTEP
+                    if cursor_x + w > self.WIDTH - self.HSTEP:
+                        cursor_y += self.font.metrics("linespace") * 1.25
+                        cursor_x = self.HSTEP
 
-            display_list.append((cursor_x, cursor_y, word))
+                    display_list.append((cursor_x, cursor_y, word))
 
-            cursor_x += w + self.font.measure(" ")
+                    cursor_x += w + self.font.measure(" ")
 
         return display_list
 
@@ -90,6 +143,5 @@ class Browser:
 
 
 if __name__ == "__main__":
-    import sys
-    Browser().load(sys.argv[1])
+    Browser()
     tkinter.mainloop()

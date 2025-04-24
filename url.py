@@ -1,25 +1,34 @@
-import socket
-import ssl
-
-from config.constants import USER_AGENT, HTTP_VERSION
 
 
 class URL:
     def __init__(self, url):
         self.url = url
-        self.scheme, self.isHttps = self._extract_scheme(self.url)
-        self.host = self._extract_host(self.url)
-        self.port = self._extract_port(self.scheme, self.host)
+        self.scheme, self.isHttpRequest, self.isHttps, self.isFile = self._extract_scheme(
+            self.url)
+
         self.path = self._extract_path(self.url)
+
+        if self.isHttpRequest:
+            self.host = self._extract_host(self.url)
+            self.port = self._extract_port(self.scheme, self.host)
+
+    def request(self):
+        if self.isHttpRequest:
+            return self._make_http_request()
+        elif self.isFile:
+            return self._make_file_request()
 
     def _extract_scheme(self, url: str):
         scheme, _ = url.split("://", 1)
 
-        assert scheme in ['http', 'https'], f"Unsupported scheme: {scheme}"
+        assert scheme in ["http", "https",
+                          "file"], f"Unsupported scheme: {scheme}"
 
+        isHttpRequest = scheme in ['http', 'https']
         isHttps = scheme == 'https'
+        isFile = scheme == 'file'
 
-        return [scheme, isHttps]
+        return [scheme, isHttpRequest, isHttps, isFile]
 
     def _extract_host(self, url: str):
         url = url.split("://", 1)[1]
@@ -49,28 +58,39 @@ class URL:
         else:
             return "/"
 
-    def request(self):
-        s = socket.socket(
+    def _make_file_request(self):
+        import os
+
+        abs_path = os.path.abspath(self.path)
+
+        try:
+            with open(abs_path, "r", encoding="utf-8") as file:
+                return file.read()
+        except FileNotFoundError:
+            return "<h1>File not found</h1>"
+
+    def _make_http_request(self):
+        import socket
+        import ssl
+
+        tcp_socket = socket.socket(
             family=socket.AF_INET,
             type=socket.SOCK_STREAM,
             proto=socket.IPPROTO_TCP
         )
 
-        s.connect((self.host, self.port))
+        tcp_socket.connect((self.host, self.port))
 
         if self.isHttps:
-            ctx = ssl.create_default_context()
-            s = ctx.wrap_socket(s, server_hostname=self.host)
+            ssl_ctx = ssl.create_default_context()
+            tcp_socket = ssl_ctx.wrap_socket(
+                tcp_socket, server_hostname=self.host)
 
-        request = "GET {} {}\r\n".format(self.path, HTTP_VERSION)
-        request += "Host: {}\r\n".format(self.host)
-        request += "Connection: close\r\n"
-        request += "User-Agent: {}\r\n".format(USER_AGENT)
-        request += "\r\n"
+        request_string = self._compose_http_req_string()
 
-        s.send(request.encode("utf8"))
+        tcp_socket.send(request_string)
 
-        response = s.makefile("r", encoding="utf8", newline="\r\n")
+        response = tcp_socket.makefile("r", encoding="utf8", newline="\r\n")
 
         statusLine = response.readline()
         version, status, explanation = statusLine.split(" ", 2)
@@ -92,6 +112,17 @@ class URL:
 
         content = response.read()
 
-        s.close()
+        tcp_socket.close()
 
         return content
+
+    def _compose_http_req_string(self) -> str:
+        from config.constants import USER_AGENT, HTTP_VERSION
+
+        reqStr = f"GET {self.path} {HTTP_VERSION}\r\n"
+        reqStr += f"Host: {self.host}\r\n"
+        reqStr += "Connection: close\r\n"
+        reqStr += f"User-Agent: {USER_AGENT}\r\n"
+        reqStr += "\r\n"
+
+        return reqStr.encode("utf8")

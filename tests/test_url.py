@@ -10,10 +10,19 @@ def test_scheme():
     url = URL("https://example.com")
     assert url.scheme == "https"
     assert url.isHttps == True
+    assert url.isHttpRequest == True
 
     url = URL("http://example.com")
     assert url.scheme == "http"
     assert url.isHttps == False
+    assert url.isHttpRequest == True
+
+    url = URL("file:///Mozzarella/test-files/index.html")
+    assert url.scheme == "file"
+    assert url.isHttps == False
+    assert url.isHttpRequest == False
+    assert url.isFile == True
+    assert url.path == "/Mozzarella/test-files/index.html"
 
 
 def test_host():
